@@ -1,5 +1,5 @@
 --================================================================================================================================
--- Copyright 2024 UVVM
+-- Copyright 2025 UVVM
 -- Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
 -- You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0 and in the provided LICENSE.TXT.
 --
@@ -13,12 +13,31 @@
 ------------------------------------------------------------------------------------------
 -- Description   : See library quick reference (under 'doc') and README-file(s)
 ------------------------------------------------------------------------------------------
+library IEEE;
+use IEEE.std_logic_1164.all;
+use IEEE.numeric_std.all;
 
-context vvc_context is
-  library bitvis_vip_axilite;
-  use bitvis_vip_axilite.transaction_pkg.all;
-  use bitvis_vip_axilite.vvc_methods_pkg.all;
-  use bitvis_vip_axilite.td_vvc_framework_common_methods_pkg.all;
-  use bitvis_vip_axilite.axilite_bfm_pkg.all;
-  use bitvis_vip_axilite.axilite_slave_bfm_pkg.all;
-end context;
+library uvvm_vvc_framework;
+use uvvm_vvc_framework.ti_vvc_framework_support_pkg.all;
+
+library uvvm_util;
+context uvvm_util.uvvm_util_context;
+
+library bitvis_vip_clock_generator;
+use work.axilite_bfm_pkg.all;
+
+entity axi_lite_bfm_th is
+end entity axi_lite_bfm_th;
+
+architecture struct of axi_lite_bfm_th is
+
+
+begin
+
+  ------------------------------------------------------------------------------
+  -- Instantiate the UVVM engine.
+  ------------------------------------------------------------------------------
+  i_ti_uvvm_engine : entity uvvm_vvc_framework.ti_uvvm_engine;
+
+
+end architecture struct;
