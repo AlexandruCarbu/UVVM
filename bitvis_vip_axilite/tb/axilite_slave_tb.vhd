@@ -47,12 +47,13 @@ end entity axilite_slave_bfm_tb;
 
 architecture sim of axilite_slave_bfm_tb is
 
+  constant      vvc_instance_idx           : integer              := 1;
+  constant      C_VVC_NAME                 : string               := "AXILITE_VVC";
+  
   signal        clk                        : std_logic            := '0';
   signal        arst                       : std_logic            := '0';
   signal        AXILITE_VVCT               : t_vvc_target_record  := set_vvc_target_defaults(C_VVC_NAME);
   
-  constant      vvc_instance_idx           : integer              := 1;
-  constant      C_VVC_NAME                 : string               := "AXILITE_VVC";
   ------------------------------------------------------------------------------
   -- Create a common AXI‑Lite interface signal. We initialize it using the master’s
   -- helper function (assumed to be compatible with the slave’s view).
