@@ -18,32 +18,41 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
+library std;
+use std.textio.all;
+
 library uvvm_util;
 context uvvm_util.uvvm_util_context;
+
+library uvvm_vvc_framework;
+use uvvm_vvc_framework.ti_vvc_framework_support_pkg.all;
 
 library bitvis_vip_clock_generator;
 context bitvis_vip_clock_generator.vvc_context;
 
+library bitvis_vip_axilite;
+context bitvis_vip_axilite.vvc_context;
 
-use work.axilite_bfm_pkg.all;
-use work.axilite_slave_bfm_pkg.all;
+use work.axilite_slave_tb_pkg.all;
+use work.vvc_cmd_pkg.all;
+use work.td_target_support_pkg.all;
+use work.transaction_pkg.all;
+use work.vvc_sb_pkg.all;
+use work.vvc_methods_pkg.all;
 
 -- hdlregression:tb
 -- Test bench entity
-entity axi_lite_bfm_tb is
-end entity axi_lite_bfm_tb;
+entity axilite_slave_bfm_tb is
+end entity axilite_slave_bfm_tb;
 
-architecture sim of axi_lite_bfm_tb is
+architecture sim of axilite_slave_bfm_tb is
 
-  constant ADDR_WIDTH : natural := 32;
-  constant DATA_WIDTH : natural := 32;
-
-  signal clk  : std_logic := '0';
-  signal arst : std_logic := '0';
-
-  constant C_CLK_PERIOD : time    := 10 ns; -- 100 MHz clock
-  constant C_CLOCK_GEN  : natural := 1;
-
+  signal        clk                        : std_logic            := '0';
+  signal        arst                       : std_logic            := '0';
+  signal        AXILITE_VVCT               : t_vvc_target_record  := set_vvc_target_defaults(C_VVC_NAME);
+  
+  constant      vvc_instance_idx           : integer              := 1;
+  constant      C_VVC_NAME                 : string               := "AXILITE_VVC";
   ------------------------------------------------------------------------------
   -- Create a common AXI‑Lite interface signal. We initialize it using the master’s
   -- helper function (assumed to be compatible with the slave’s view).
@@ -52,146 +61,123 @@ architecture sim of axi_lite_bfm_tb is
   write_data_channel(wdata(DATA_WIDTH - 1 downto 0),
                      wstrb((DATA_WIDTH / 8) - 1 downto 0)),
   read_address_channel(araddr(ADDR_WIDTH - 1 downto 0)),
-  read_data_channel(rdata(DATA_WIDTH - 1 downto 0))) := init_axilite_if_signals(ADDR_WIDTH, DATA_WIDTH);
-  
+  read_data_channel(rdata(DATA_WIDTH - 1 downto 0)));
+
+  -- slave has a differen signal init
+  signal axislv_if : t_axilite_if(write_address_channel(awaddr(ADDR_WIDTH - 1 downto 0)),
+  write_data_channel(wdata(DATA_WIDTH - 1 downto 0),
+                     wstrb((DATA_WIDTH / 8) - 1 downto 0)),
+  read_address_channel(araddr(ADDR_WIDTH - 1 downto 0)),
+  read_data_channel(rdata(DATA_WIDTH - 1 downto 0))) := init_axilite_slave_if_signals(ADDR_WIDTH, DATA_WIDTH);
+
+  signal        read_addr                  : unsigned         (ADDR_WIDTH - 1 downto 0);
+  signal        read_data                  : std_logic_vector (DATA_WIDTH - 1 downto 0);
+
 
 begin
   -----------------------------------------------------------------------------
   -- Instantiate test harness, containing DUT and Executors
   -----------------------------------------------------------------------------
-  i_test_harness : entity work.axi_lite_bfm_th;
+  i_test_harness : entity work.axi_lite_bfm_th
+                  port map (
+                    clk         => clk,         -- Connect clock
+                    arst        => arst,        -- Connect reset
+                    axilite_if  => axi_if  -- Connect axi_if
+                  );
 
-  -- Wait for UVVM to finish initialization
-  --await_uvvm_initialization(VOID);
-  start_clock(CLOCK_GENERATOR_VVCT, 1, "Start clock generator");
+  axislv_if.write_address_channel.awvalid <= axi_if.write_address_channel.awvalid;
+  axislv_if.write_data_channel.wvalid     <= axi_if.write_data_channel.wvalid    ;
+
+
+  ----------------------------------------------------------------------------
+  -- AXI Lite Sequencer
+  ----------------------------------------------------------------------------
+  p_sequencer : process
+    constant        proc_call                  : string := "";  --"axilite_write(A:" & to_string(addr_value, HEX, AS_IS, INCL_RADIX) & ", " & to_string(data_value, HEX, AS_IS, INCL_RADIX) & ")";
+  begin
+    -- Wait for UVVM to finish initialization
+    await_uvvm_initialization(VOID);
 
     -- Print the configuration to the log
     report_global_ctrl(VOID);
     report_msg_id_panel(VOID);
-
-    --enable_log_msg(ALL_MESSAGES);
-    disable_log_msg(ALL_MESSAGES);
+    enable_log_msg(ALL_MESSAGES);
     enable_log_msg(ID_LOG_HDR);
     enable_log_msg(ID_SEQUENCER);
     enable_log_msg(ID_UVVM_SEND_CMD);
+    log(ID_LOG_HDR, "Starting simulation of TB AXI Slave", C_SCOPE);
 
-    log(ID_LOG_HDR, "Starting simulation of TB for UART using VVCs", C_SCOPE);
-    ------------------------------------------------------------
+    -- Init the axi interface
+    axi_if <= init_axilite_slave_if_signals(ADDR_WIDTH, DATA_WIDTH);
+    
+    -- Start the clk
+    start_clock(CLOCK_GENERATOR_VVCT, 1, "Start clock generator");
 
-    log("Wait 10 clock period for reset to be turned off");
-    -- wait for (10 * C_CLK_PERIOD);       -- for reset to be turned off
-
-  ----------------------------------------------------------------------------
-  -- AXI Lite Master Process
-  ----------------------------------------------------------------------------
-  master_process : process
-    variable read_data : std_logic_vector(DATA_WIDTH-1 downto 0);
-  begin
     -- Wait for reset
-    --wait until arst = '0';
-    wait for 20 ns;
+    log(ID_LOG_HDR, "Starting slave process", C_SCOPE);
 
-    -- Write Transaction: Write 0xCAFEBABE to address 100.
+    -- Master starts the write transaction
     axilite_write(
-      addr_value  => to_unsigned(100, ADDR_WIDTH),
-      data_value  => X"CAFEBABE",
-      msg         => "Master write transaction",
-      clk         => clk,
-      axilite_if  => axi_if
+      msg                 => "Master write",
+      VVCT                => AXILITE_VVCT,
+      vvc_instance_idx    => vvc_instance_idx,
+      addr                => TEST_ADDR_VALUE,
+      data                => TEST_DATA_VALUE
     );
 
-    -- Indicate write is done
-    --write_done <= true;
-
-    -- wait until write_response_done = true;
-    
-    -- Read Transaction: Read from address 100.
-    axilite_read(
-      addr_value  => to_unsigned(100, ADDR_WIDTH),
-      data_value  => read_data,
-      msg         => "Master read transaction",
-      clk         => clk,
-      axilite_if  => axi_if
+    -- Slave waits for a write transaction
+    axilite_slave_await_write(
+      msg                 => "Slave wait for write",
+      clk                 => clk,
+      axilite_if          => axi_if,
+      addr_value          => read_addr,
+      data_value          => read_data
     );
 
-    -- Indicate read is done
-    --read_done <= true;
+    check_value(read_addr = TEST_ADDR_VALUE, C_AXILITE_SLAVE_BFM_CONFIG_DEFAULT.max_wait_cycles_severity, ": Address value", scope, ID_NEVER, shared_msg_id_panel, proc_call);
+    check_value(read_data = TEST_DATA_VALUE, C_AXILITE_SLAVE_BFM_CONFIG_DEFAULT.max_wait_cycles_severity, ": Data value", scope, ID_NEVER, shared_msg_id_panel, proc_call);
 
-    report "Master read data = " & to_hstring(read_data);
-
-    wait; -- End process
-  end process master_process;
-
-  ----------------------------------------------------------------------------
-  -- AXI Lite Slave Process: DUT
-  ----------------------------------------------------------------------------
-  slave_process : process
-  begin
-    -- Wait for reset
-    --wait until arst = '0';
-    
-    -- Wait for a write transaction
-    axilite_slave_wait_write(
-      msg         => "Slave wait for write",
-      clk         => clk,
-      axilite_if  => axi_if
-    );
-
-    -- Wait until master completes the write
-    -- wait until write_done = true; -- Note: probabbly redundant since I am already waiting
-
-    -- Send write response
+    -- Slave sends write response
     axilite_slave_send_write_response(
-      msg         => "Slave sending write response",
-      clk         => clk,
-      axilite_if  => axi_if
+      msg                 => "Slave sending write response",
+      clk                 => clk,
+      axilite_if          => axi_if
     );
 
-    -- Indicate write responce is done
-    --write_response_done = true;
-
-    -- Wait for a read transaction
-    axilite_slave_wait_read(
-      --addr_value  => to_unsigned(100, ADDR_WIDTH),
-      msg         => "Slave waiting for read",
-      clk         => clk,
-      axilite_if  => axi_if
+    -- Master starts the read transaction
+    axilite_read(
+      msg                 => "Master read",
+      VVCT                => AXILITE_VVCT,
+      vvc_instance_idx    => vvc_instance_idx,
+      addr                => TEST_ADDR_VALUE
     );
 
-    -- Send read response
+    -- Slave waits for a read transaction
+    axilite_slave_await_read(
+      msg                 => "Slave waiting for read",
+      clk                 => clk,
+      axilite_if          => axi_if,
+      addr_value          => read_addr
+    );
+
+    -- Master sends read response
     axilite_slave_send_read_response(
-      data_value  => X"CAFEBABE",
-      msg         => "Slave sending read response",
-      clk         => clk,
-      axilite_if  => axi_if
+      msg                 => "Slave sending read response",
+      clk                 => clk,
+      axilite_if          => axi_if,
+      data_value          => read_data
+    );
+
+    -- Master check after read
+    axilite_check(
+      msg                 => "Master check",
+      VVCT                => AXILITE_VVCT,
+      vvc_instance_idx    => vvc_instance_idx,
+      addr                => TEST_ADDR_VALUE,
+      data                => TEST_DATA_VALUE
     );
   
     wait; -- End process
-  end process slave_process;
-
-  ------------------------------------------------------------------------------
-  -- Clock Generator VVC.
-  ------------------------------------------------------------------------------
-  i_clock_generator_vvc : entity bitvis_vip_clock_generator.clock_generator_vvc
-    generic map(
-      GC_INSTANCE_IDX    => C_CLOCK_GEN,
-      GC_CLOCK_NAME      => "Clock",
-      GC_CLOCK_PERIOD    => C_CLK_PERIOD,
-      GC_CLOCK_HIGH_TIME => C_CLK_PERIOD / 2
-    )
-    port map(
-      clk => clk
-    );
-
-  ------------------------------------------------------------------------------
-  -- Reset Generator Process: Assert reset for 5 clock cycles.
-  ------------------------------------------------------------------------------
-  p_arst : process
-  begin
-    arst <= '1';
-    wait for 5 * C_CLK_PERIOD;
-    arst <= '0';
-    wait;
-  end process p_arst;
+  end process p_sequencer;
 
 end architecture sim;

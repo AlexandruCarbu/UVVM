@@ -23,8 +23,8 @@ use std.textio.all;
 library uvvm_util;
 context uvvm_util.uvvm_util_context;
 
--- We assume the master BFM package is available so we can reuse its types and functions.
-use work.axilite_bfm_pkg.all;
+library bitvis_vip_axilite;
+use bitvis_vip_axilite.axilite_bfm_pkg.all;
 
 package axilite_slave_bfm_pkg is
   
@@ -103,62 +103,15 @@ package axilite_slave_bfm_pkg is
     id_for_bfm_poll            => ID_BFM_POLL
   );
 
-  ------------------------------------------------------------------
-  -- This is the AXI-Lite slave interface record.
-  ------------------------------------------------------------------
-  type t_axilite_write_address_channel is record
-    --DUT outputs
-    awaddr  : std_logic_vector;
-    awvalid : std_logic;
-    awprot  : std_logic_vector(2 downto 0); -- [0: '0' - unpriviliged access, '1' - priviliged access; 1: '0' - secure access, '1' - non-secure access, 2: '0' - Data access, '1' - Instruction accesss]
-    --DUT inputs
-    awready : std_logic;
-  end record;
-
-  type t_axilite_write_data_channel is record
-    --DUT outputs
-    wdata  : std_logic_vector;
-    wstrb  : std_logic_vector;
-    wvalid : std_logic;
-    --DUT inputs
-    wready : std_logic;
-  end record;
-
-  type t_axilite_write_response_channel is record
-    --DUT outputs
-    bready : std_logic;
-    --DUT inputs
-    bresp  : std_logic_vector(1 downto 0);
-    bvalid : std_logic;
-  end record;
-
-  type t_axilite_read_address_channel is record
-    --DUT outputs
-    araddr  : std_logic_vector;
-    arvalid : std_logic;
-    arprot  : std_logic_vector(2 downto 0); -- [0: '0' - unpriviliged access, '1' - priviliged access; 1: '0' - secure access, '1' - non-secure access, 2: '0' - Data access, '1' - Instruction accesss]
-    --DUT inputs
-    arready : std_logic;
-  end record;
-
-  type t_axilite_read_data_channel is record
-    --DUT outputs
-    rready : std_logic;
-    --DUT inputs
-    rdata  : std_logic_vector;
-    rresp  : std_logic_vector(1 downto 0);
-    rvalid : std_logic;
-  end record;
-
   ------------------------------------------
-  -- axilite_slave_wait_write
+  -- axilite_slave_await_write
   ------------------------------------------
   -- This procedure waits for a write request to be received in the
   -- write address channel and write data channel
   -- TODO: Consider adding other outputs like t_axprot
-  procedure axilite_slave_wait_write(
-    -- constant addr_value   : in unsigned;
-    -- constant data_value   : in std_logic_vector;
+  procedure axilite_slave_await_write(
+    signal addr_value     : out unsigned;
+    signal data_value     : out std_logic_vector;
     constant msg          : in string;
     signal   clk          : in std_logic;
     signal   axilite_if   : inout t_axilite_if;
@@ -169,13 +122,13 @@ package axilite_slave_bfm_pkg is
 
   
   ------------------------------------------
-  -- axilite_slave_wait_read
+  -- axilite_slave_await_read
   ------------------------------------------
   -- This procedure waits for a read request to be received in the
   -- read address channel
   -- TODO: Consider adding other outputs like t_axprot
-  procedure axilite_slave_wait_read(
-    -- constant addr_value   : in unsigned;
+  procedure axilite_slave_await_read(
+    signal   addr_value   : out unsigned;
     constant msg          : in string;
     signal   clk          : in std_logic;
     signal   axilite_if   : inout t_axilite_if;
@@ -227,6 +180,12 @@ package axilite_slave_bfm_pkg is
     constant scope                   : in string         := C_BFM_SCOPE;
     constant msg_id_panel            : in t_msg_id_panel := shared_msg_id_panel
   ) return std_logic_vector;
+
+  function init_axilite_slave_if_signals(
+    addr_width : natural;
+    data_width : natural
+  ) return t_axilite_if;
+  
 end package axilite_slave_bfm_pkg;
 
 package body axilite_slave_bfm_pkg is
@@ -279,46 +238,105 @@ package body axilite_slave_bfm_pkg is
     return v_axilite_response_status_slv;
   end function;
 
+  function init_axilite_slave_if_signals(
+    addr_width : natural;
+    data_width : natural
+  ) return t_axilite_if is
+    variable init_if : t_axilite_if(write_address_channel(awaddr(addr_width - 1 downto 0)),
+                                    write_data_channel(wdata(data_width - 1 downto 0),
+                                                       wstrb((data_width / 8) - 1 downto 0)),
+                                    read_address_channel(araddr(addr_width - 1 downto 0)),
+                                    read_data_channel(rdata(data_width - 1 downto 0)));
+  begin
+    -- Write Address Channel
+    init_if.write_address_channel.awaddr  := (init_if.write_address_channel.awaddr'range => 'Z');
+    init_if.write_address_channel.awvalid := 'Z';
+    init_if.write_address_channel.awprot  := (init_if.write_address_channel.awprot'range => 'Z');
+    init_if.write_address_channel.awready := '0';
+    -- Write Data Channel
+    init_if.write_data_channel.wdata      := (init_if.write_data_channel.wdata'range => 'Z');
+    init_if.write_data_channel.wstrb      := (init_if.write_data_channel.wstrb'range => 'Z');
+    init_if.write_data_channel.wvalid     := 'Z';
+    init_if.write_data_channel.wready     := '0';
+    -- Write Response Channel
+    init_if.write_response_channel.bready := 'Z';
+    init_if.write_response_channel.bresp  := (init_if.write_response_channel.bresp'range => '0');
+    init_if.write_response_channel.bvalid := '0';
+    -- Read Address Channel
+    init_if.read_address_channel.araddr   := (init_if.read_address_channel.araddr'range => 'Z');
+    init_if.read_address_channel.arvalid  := 'Z';
+    init_if.read_address_channel.arprot   := (init_if.read_address_channel.arprot'range => 'Z');
+    init_if.read_address_channel.arready  := '0';
+    -- Read Data Channel
+    init_if.read_data_channel.rready      := 'Z';
+    init_if.read_data_channel.rdata       := (init_if.read_data_channel.rdata'range => '0');
+    init_if.read_data_channel.rresp       := (init_if.read_data_channel.rresp'range => '0');
+    init_if.read_data_channel.rvalid      := '0';
+    return init_if;
+  end function;
   
 
-  procedure axilite_slave_wait_write(
-    -- constant addr_value   : in unsigned;
-    -- constant data_value   : in std_logic_vector;
+  procedure axilite_slave_await_write(
+    signal addr_value     : out unsigned;
+    signal data_value     : out std_logic_vector;
     constant msg          : in string;
     signal   clk          : in std_logic;
     signal   axilite_if   : inout t_axilite_if;
     constant scope        : in string               := C_BFM_SCOPE;
     constant msg_id_panel : in t_msg_id_panel       := shared_msg_id_panel;
     constant config       : in t_axilite_slave_bfm_config := C_AXILITE_SLAVE_BFM_CONFIG_DEFAULT
+
   ) is
+    constant proc_call              : string := "";  --"axilite_write(A:" & to_string(addr_value, HEX, AS_IS, INCL_RADIX) & ", " & to_string(data_value, HEX, AS_IS, INCL_RADIX) & ")";
+    variable v_time_of_rising_edge  : time := -1 ns; -- time stamp for clk period checking
+    variable v_time_of_falling_edge : time := -1 ns; -- time stamp for clk period checking
+    variable v_wvalid               : std_logic;
+    variable v_awvalid              : std_logic;
+    variable v_await_wvalid         : boolean := true;
+    variable v_await_awvalid        : boolean := true;
   begin
-    -- TODO: Maybe decouple address write channel from data write channel
-
     -- Wait until both the write address and write data are valid.
-    -- TODO: Add timeout
-    while not (axilite_if.write_address_channel.awvalid = '1' and axilite_if.write_data_channel.wvalid = '1') loop
-      wait until rising_edge(clk);
+    for cycle in 0 to config.max_wait_cycles loop
+      --log(config.id_for_bfm, "Waiting for AWVALID" & "(" & to_string(axilite_if.write_address_channel.awvalid) & ") and WVALID" & "(" & to_string(axilite_if.write_data_channel.wvalid) & ")", scope, msg_id_panel);
+      wait_on_bfm_sync_start(clk, config.bfm_sync, config.setup_time, config.clock_period, v_time_of_falling_edge, v_time_of_rising_edge);
+      -- Sample valid signals
+      v_wvalid  := axilite_if.write_data_channel.wvalid;
+      v_awvalid := axilite_if.write_address_channel.awvalid;
+      
+      if v_wvalid = '1' and v_awvalid = '1' then
+        -- Assert ready signals to complete the handshake.
+        -- TODO: Add delay ?
+        log(config.id_for_bfm, "Setting AWREADY and WREADY", scope, msg_id_panel);
+        axilite_if.write_address_channel.awready <= '1';
+        axilite_if.write_data_channel.wready  <= '1';
+
+        -- Hold ready for one clock cycle
+        wait_on_bfm_sync_start(clk, config.bfm_sync, config.setup_time, config.clock_period, v_time_of_falling_edge, v_time_of_rising_edge);
+
+        -- Capture the incoming address and data. Not needed for now
+        addr_value <= unsigned(axilite_if.write_address_channel.awaddr);
+        data_value <= axilite_if.write_data_channel.wdata;
+        
+        -- Deassert the ready signals.
+        log(config.id_for_bfm, "Clearing AWREADY and WREADY", scope, msg_id_panel);
+        axilite_if.write_address_channel.awready <= '0';
+        axilite_if.write_data_channel.wready  <= '0';
+        
+        v_await_wvalid := false;
+        v_await_awvalid := false;
+
+        exit;
+      end if;
+
     end loop;
+    
+    check_value(not v_await_wvalid, config.max_wait_cycles_severity, ": Timeout waiting for WVALID", scope, ID_NEVER, msg_id_panel, proc_call);
+    check_value(not v_await_awvalid, config.max_wait_cycles_severity, ": Timeout waiting for AWVALID", scope, ID_NEVER, msg_id_panel, proc_call);
 
-    -- Assert ready signals to complete the handshake.
-    -- TODO: Add delay
-    axilite_if.write_address_channel.awready <= '1';
-    axilite_if.write_data_channel.wready  <= '1';
-
-    wait until rising_edge(clk);  -- Hold ready for one clock cycle
-
-    -- Capture the incoming address and data. Not needed for now
-    -- addr_value := axilite_if.write_address_channel.awaddr;
-    -- data_value := axilite_if.write_data_channel.wdata;
-
-    -- Deassert the ready signals.
-    axilite_if.write_address_channel.awready <= '0';
-    axilite_if.write_data_channel.wready  <= '0';
   end procedure;
-  
 
-  procedure axilite_slave_wait_read(
-    -- constant addr_value   : in unsigned;
+  procedure axilite_slave_await_read(
+    signal   addr_value   : out unsigned;
     constant msg          : in string;
     signal   clk          : in std_logic;
     signal   axilite_if   : inout t_axilite_if;
@@ -339,8 +357,8 @@ package body axilite_slave_bfm_pkg is
 
     wait until rising_edge(clk);  -- Wait one cycle for the handshake
 
-    -- Capture the read address. NOTE: not needed for now
-    -- addr_value := axilite_if.araddr;
+    -- Capture the read address.
+    addr_value <= unsigned(axilite_if.read_address_channel.araddr);
 
     -- Deassert the ready signal.
     axilite_if.read_address_channel.arready <= '0';
