@@ -45,7 +45,6 @@ end entity axi_lite_bfm_th;
 
 architecture struct of axi_lite_bfm_th is
   constant C_CLK_PERIOD : time    := 10 ns; -- 100 MHz clock
-  constant C_CLOCK_GEN  : natural := 1;
 begin
 
   ------------------------------------------------------------------------------
@@ -58,7 +57,7 @@ begin
   ------------------------------------------------------------------------------
   i_clock_generator_vvc : entity bitvis_vip_clock_generator.clock_generator_vvc
     generic map(
-      GC_INSTANCE_IDX    => C_CLOCK_GEN,
+      GC_INSTANCE_IDX    => 0,
       GC_CLOCK_NAME      => "Clock",
       GC_CLOCK_PERIOD    => C_CLK_PERIOD,
       GC_CLOCK_HIGH_TIME => C_CLK_PERIOD / 2
@@ -71,7 +70,7 @@ begin
     generic map(
     GC_ADDR_WIDTH => ADDR_WIDTH,
     GC_DATA_WIDTH => DATA_WIDTH,
-    GC_INSTANCE_IDX => 0
+    GC_INSTANCE_IDX => 1
     )
     port map(
     clk => clk,

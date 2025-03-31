@@ -110,8 +110,8 @@ package axilite_slave_bfm_pkg is
   -- write address channel and write data channel
   -- TODO: Consider adding other outputs like t_axprot
   procedure axilite_slave_await_write(
-    signal addr_value     : out unsigned;
-    signal data_value     : out std_logic_vector;
+    signal addr_value     : inout unsigned;
+    signal data_value     : inout std_logic_vector;
     constant msg          : in string;
     signal   clk          : in std_logic;
     signal   axilite_if   : inout t_axilite_if;
@@ -277,8 +277,8 @@ package body axilite_slave_bfm_pkg is
   
 
   procedure axilite_slave_await_write(
-    signal addr_value     : out unsigned;
-    signal data_value     : out std_logic_vector;
+    signal addr_value     : inout unsigned;
+    signal data_value     : inout std_logic_vector;
     constant msg          : in string;
     signal   clk          : in std_logic;
     signal   axilite_if   : inout t_axilite_if;
@@ -313,7 +313,9 @@ package body axilite_slave_bfm_pkg is
         -- Hold ready for one clock cycle
         wait_on_bfm_sync_start(clk, config.bfm_sync, config.setup_time, config.clock_period, v_time_of_falling_edge, v_time_of_rising_edge);
 
-        -- Capture the incoming address and data. Not needed for now
+        -- Capture the incoming address and data.
+        log(ID_LOG_HDR, "read_addr: " & to_string(axilite_if.write_address_channel.awaddr), C_SCOPE);
+        log(ID_LOG_HDR, "data_value: " & to_string(axilite_if.write_data_channel.wdata), C_SCOPE);
         addr_value <= unsigned(axilite_if.write_address_channel.awaddr);
         data_value <= axilite_if.write_data_channel.wdata;
         
@@ -332,36 +334,57 @@ package body axilite_slave_bfm_pkg is
     
     check_value(not v_await_wvalid, config.max_wait_cycles_severity, ": Timeout waiting for WVALID", scope, ID_NEVER, msg_id_panel, proc_call);
     check_value(not v_await_awvalid, config.max_wait_cycles_severity, ": Timeout waiting for AWVALID", scope, ID_NEVER, msg_id_panel, proc_call);
-
+    
+    wait for 0 ns;
   end procedure;
 
   procedure axilite_slave_await_read(
-    signal   addr_value   : out unsigned;
-    constant msg          : in string;
-    signal   clk          : in std_logic;
-    signal   axilite_if   : inout t_axilite_if;
-    constant scope        : in string                     := C_BFM_SCOPE;
-    constant msg_id_panel : in t_msg_id_panel             := shared_msg_id_panel;
-    constant config       : in t_axilite_slave_bfm_config := C_AXILITE_SLAVE_BFM_CONFIG_DEFAULT
+    signal   addr_value          : out unsigned;
+    constant msg                 : in string;
+    signal   clk                 : in std_logic;
+    signal   axilite_if          : inout t_axilite_if;
+    constant scope               : in string                     := C_BFM_SCOPE;
+    constant msg_id_panel        : in t_msg_id_panel             := shared_msg_id_panel;
+    constant config              : in t_axilite_slave_bfm_config := C_AXILITE_SLAVE_BFM_CONFIG_DEFAULT
   ) is
+    constant proc_call              : string := "";
+    variable v_time_of_rising_edge  : time := -1 ns; -- time stamp for clk period checking
+    variable v_time_of_falling_edge : time := -1 ns; -- time stamp for clk period checking
+    variable v_arvalid              : std_logic;
+    variable v_await_arvalid        : boolean := true;
   begin
     -- Wait until a read address is provided by the master.
-    -- TODO: Add timeout
-    while not (axilite_if.read_address_channel.arvalid = '1') loop
-      wait until rising_edge(clk);
+    for cycle in 0 to config.max_wait_cycles loop
+        --while not (axilite_if.read_address_channel.arvalid = '1') loop
+        --  wait until rising_edge(clk);
+        --end loop;
+
+        -- Sample valid signals
+        v_arvalid := axilite_if.read_address_channel.arvalid;
+        wait_on_bfm_sync_start(clk, config.bfm_sync, config.setup_time, config.clock_period, v_time_of_falling_edge, v_time_of_rising_edge);
+
+        if v_arvalid = '1' then
+          -- Assert the read ready signal.
+          axilite_if.read_address_channel.arready <= '1';
+
+          -- Hold ready for one clock cycle.
+          wait_on_bfm_sync_start(clk, config.bfm_sync, config.setup_time, config.clock_period, v_time_of_falling_edge, v_time_of_rising_edge);
+
+          -- Capture the read address.
+          addr_value <= unsigned(axilite_if.read_address_channel.araddr);
+
+          -- Deassert the ready signal.
+          -- TODO: had to comment to make it work undestand why, not enough waiting time?
+          --axilite_if.read_address_channel.arready <= '0';
+          v_await_arvalid := false;
+
+          exit;
+      end if;
     end loop;
 
-    -- Assert the read ready signal.
-    -- TODO: Add delay
-    axilite_if.read_address_channel.arready <= '1';
-
-    wait until rising_edge(clk);  -- Wait one cycle for the handshake
-
-    -- Capture the read address.
-    addr_value <= unsigned(axilite_if.read_address_channel.araddr);
-
-    -- Deassert the ready signal.
-    axilite_if.read_address_channel.arready <= '0';
+    check_value(not v_await_arvalid, config.max_wait_cycles_severity, ": Timeout waiting for ARVALID", scope, ID_NEVER, msg_id_panel, proc_call);
+    
+    wait for 0 ns;
   end procedure;
   
 
@@ -374,20 +397,38 @@ package body axilite_slave_bfm_pkg is
     constant msg_id_panel            : in t_msg_id_panel             := shared_msg_id_panel;
     constant config                  : in t_axilite_slave_bfm_config := C_AXILITE_SLAVE_BFM_CONFIG_DEFAULT
   ) is
+    constant proc_call              : string := "";
+    variable v_time_of_rising_edge  : time := -1 ns; -- time stamp for clk period checking
+    variable v_time_of_falling_edge : time := -1 ns; -- time stamp for clk period checking
+    variable v_bready               : std_logic;
+    variable v_await_bready         : boolean := true;
   begin
-    -- Drive the response signals.
-    axilite_if.write_response_channel.bresp  <= xresp_to_slv(axilite_response_status);
-    axilite_if.write_response_channel.bvalid <= '1';
+    for cycle in 0 to config.max_wait_cycles loop
 
-    -- Wait until the master asserts bready.
-    -- TODO: Add timeout
-    while not (axilite_if.write_response_channel.bready = '1') loop
-      wait until rising_edge(clk);
+      -- Sample ready signal.
+      v_bready := axilite_if.write_response_channel.bready;
+
+      -- Hold ready for one clock cycle.
+      wait_on_bfm_sync_start(clk, config.bfm_sync, config.setup_time, config.clock_period, v_time_of_falling_edge, v_time_of_rising_edge);
+
+      if v_bready = '1' then
+        -- Drive the response signals.
+        axilite_if.write_response_channel.bresp  <= xresp_to_slv(axilite_response_status);
+        axilite_if.write_response_channel.bvalid <= '1';
+
+        -- Hold ready for one clock cycle.
+        wait_on_bfm_sync_start(clk, config.bfm_sync, config.setup_time, config.clock_period, v_time_of_falling_edge, v_time_of_rising_edge);
+
+        -- Deassert the valid signal after the handshake.
+        axilite_if.write_response_channel.bvalid <= '0';
+        v_await_bready := false;
+        exit;
+      end if;
     end loop;
 
-    -- Deassert the valid signal after the handshake.
-    axilite_if.write_response_channel.bvalid <= '0';
-    wait until rising_edge(clk);
+    check_value(not v_await_bready, config.max_wait_cycles_severity, ": Timeout waiting for BREADY", scope, ID_NEVER, msg_id_panel, proc_call);
+
+    wait for 0 ns;
   end procedure;
   
 
@@ -401,21 +442,39 @@ package body axilite_slave_bfm_pkg is
     constant msg_id_panel            : in t_msg_id_panel             := shared_msg_id_panel;
     constant config                  : in t_axilite_slave_bfm_config := C_AXILITE_SLAVE_BFM_CONFIG_DEFAULT
   ) is
+    constant proc_call              : string := "";
+    variable v_time_of_rising_edge  : time := -1 ns; -- time stamp for clk period checking
+    variable v_time_of_falling_edge : time := -1 ns; -- time stamp for clk period checking
+    variable v_rready               : std_logic;
+    variable v_await_rready         : boolean := true;
   begin
-    -- Set the read data and response.
-    axilite_if.read_data_channel.rdata  <= data_value;
-    axilite_if.read_data_channel.rresp  <= xresp_to_slv(axilite_response_status);
-    axilite_if.read_data_channel.rvalid <= '1';
+    for cycle in 0 to config.max_wait_cycles loop
+      -- Sample ready signal.
+      v_rready := axilite_if.read_data_channel.rready;
 
-    -- Wait until the master asserts rready.
-    -- TODO: Add timeout
-    while not (axilite_if.read_data_channel.rready = '1') loop
-      wait until rising_edge(clk);
+      -- Hold ready for one clock cycle.
+      wait_on_bfm_sync_start(clk, config.bfm_sync, config.setup_time, config.clock_period, v_time_of_falling_edge, v_time_of_rising_edge);
+
+      if v_rready = '1' then 
+        -- Set the read data and response.
+        axilite_if.read_data_channel.rdata  <= data_value;
+        axilite_if.read_data_channel.rresp  <= xresp_to_slv(axilite_response_status);
+        axilite_if.read_data_channel.rvalid <= '1';
+
+        -- Hold ready for one clock cycle.
+        wait_on_bfm_sync_start(clk, config.bfm_sync, config.setup_time, config.clock_period, v_time_of_falling_edge, v_time_of_rising_edge);
+
+        -- Deassert the valid signal.
+        -- TODO: had to comment to make it work undestand why, not enough waiting time?
+        -- axilite_if.read_data_channel.rvalid <= '0';
+        v_await_rready := false;
+        exit;
+      end if;
     end loop;
 
-    -- Deassert the valid signal.
-    axilite_if.read_data_channel.rvalid <= '0';
-    wait until rising_edge(clk);
+    check_value(not v_await_rready, config.max_wait_cycles_severity, ": Timeout waiting for RREADY", scope, ID_NEVER, msg_id_panel, proc_call);
+
+    wait for 0 ns;
   end procedure;
 
 end package body axilite_slave_bfm_pkg;

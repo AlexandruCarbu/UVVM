@@ -34,11 +34,6 @@ library bitvis_vip_axilite;
 context bitvis_vip_axilite.vvc_context;
 
 use work.axilite_slave_tb_pkg.all;
-use work.vvc_cmd_pkg.all;
-use work.td_target_support_pkg.all;
-use work.transaction_pkg.all;
-use work.vvc_sb_pkg.all;
-use work.vvc_methods_pkg.all;
 
 -- hdlregression:tb
 -- Test bench entity
@@ -48,11 +43,9 @@ end entity axilite_slave_bfm_tb;
 architecture sim of axilite_slave_bfm_tb is
 
   constant      vvc_instance_idx           : integer              := 1;
-  constant      C_VVC_NAME                 : string               := "AXILITE_VVC";
   
   signal        clk                        : std_logic            := '0';
   signal        arst                       : std_logic            := '0';
-  signal        AXILITE_VVCT               : t_vvc_target_record  := set_vvc_target_defaults(C_VVC_NAME);
   
   ------------------------------------------------------------------------------
   -- Create a common AXI‑Lite interface signal. We initialize it using the master’s
@@ -71,8 +64,9 @@ architecture sim of axilite_slave_bfm_tb is
   read_address_channel(araddr(ADDR_WIDTH - 1 downto 0)),
   read_data_channel(rdata(DATA_WIDTH - 1 downto 0))) := init_axilite_slave_if_signals(ADDR_WIDTH, DATA_WIDTH);
 
-  signal        read_addr                  : unsigned         (ADDR_WIDTH - 1 downto 0);
-  signal        read_data                  : std_logic_vector (DATA_WIDTH - 1 downto 0);
+  signal          read_addr                  : unsigned         (ADDR_WIDTH - 1 downto 0);
+  signal          read_data                  : std_logic_vector (DATA_WIDTH - 1 downto 0); 
+  
 
 
 begin
@@ -88,7 +82,7 @@ begin
 
   axislv_if.write_address_channel.awvalid <= axi_if.write_address_channel.awvalid;
   axislv_if.write_data_channel.wvalid     <= axi_if.write_data_channel.wvalid    ;
-
+  
 
   ----------------------------------------------------------------------------
   -- AXI Lite Sequencer
@@ -112,19 +106,22 @@ begin
     axi_if <= init_axilite_slave_if_signals(ADDR_WIDTH, DATA_WIDTH);
     
     -- Start the clk
-    start_clock(CLOCK_GENERATOR_VVCT, 1, "Start clock generator");
+    start_clock(CLOCK_GENERATOR_VVCT, 0, "Start clock generator");
 
     -- Wait for reset
-    log(ID_LOG_HDR, "Starting slave process", C_SCOPE);
+    log(ID_LOG_HDR, "Queueing write transaction", C_SCOPE);
 
     -- Master starts the write transaction
-    axilite_write(
-      msg                 => "Master write",
-      VVCT                => AXILITE_VVCT,
-      vvc_instance_idx    => vvc_instance_idx,
-      addr                => TEST_ADDR_VALUE,
-      data                => TEST_DATA_VALUE
-    );
+    axilite_write(AXILITE_VVCT, 1, TEST_ADDR_VALUE, TEST_DATA_VALUE, "Master write");
+    --axilite_write(
+    --  msg                 => "Master write",
+    --  VVCT                => AXILITE_VVCT,
+    --  vvc_instance_idx    => vvc_instance_idx,
+    --  addr                => TEST_ADDR_VALUE,
+    --  data                => TEST_DATA_VALUE
+    --);
+    
+    log(ID_LOG_HDR, "Starting slave process", C_SCOPE);
 
     -- Slave waits for a write transaction
     axilite_slave_await_write(
@@ -135,6 +132,8 @@ begin
       data_value          => read_data
     );
 
+    log(ID_LOG_HDR, "read_addr: " & to_string(read_addr), C_SCOPE);
+    log(ID_LOG_HDR, "read_data: " & to_string(read_data), C_SCOPE);
     check_value(read_addr = TEST_ADDR_VALUE, C_AXILITE_SLAVE_BFM_CONFIG_DEFAULT.max_wait_cycles_severity, ": Address value", scope, ID_NEVER, shared_msg_id_panel, proc_call);
     check_value(read_data = TEST_DATA_VALUE, C_AXILITE_SLAVE_BFM_CONFIG_DEFAULT.max_wait_cycles_severity, ": Data value", scope, ID_NEVER, shared_msg_id_panel, proc_call);
 
@@ -161,12 +160,15 @@ begin
       addr_value          => read_addr
     );
 
-    -- Master sends read response
+    log(ID_LOG_HDR, "read_addr: " & to_string(read_addr), C_SCOPE);
+    check_value(read_addr = TEST_ADDR_VALUE, C_AXILITE_SLAVE_BFM_CONFIG_DEFAULT.max_wait_cycles_severity, ": Address value", scope, ID_NEVER, shared_msg_id_panel, proc_call);  
+
+    -- Slave sends read response
     axilite_slave_send_read_response(
       msg                 => "Slave sending read response",
       clk                 => clk,
       axilite_if          => axi_if,
-      data_value          => read_data
+      data_value          => TEST_DATA_VALUE
     );
 
     -- Master check after read
