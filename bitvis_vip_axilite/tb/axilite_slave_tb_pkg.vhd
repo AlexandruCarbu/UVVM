@@ -1,5 +1,5 @@
 --================================================================================================================================
--- Copyright 2024 UVVM
+-- Copyright 2025 UVVM
 -- Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
 -- You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0 and in the provided LICENSE.TXT.
 --
@@ -13,12 +13,38 @@
 ------------------------------------------------------------------------------------------
 -- Description   : See library quick reference (under 'doc') and README-file(s)
 ------------------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
-context vvc_context is
-  library bitvis_vip_axilite;
-  use bitvis_vip_axilite.transaction_pkg.all;
-  use bitvis_vip_axilite.vvc_methods_pkg.all;
-  use bitvis_vip_axilite.td_vvc_framework_common_methods_pkg.all;
-  use bitvis_vip_axilite.axilite_bfm_pkg.all;
-  use bitvis_vip_axilite.axilite_slave_bfm_pkg.all;
-end context;
+library std;
+use std.textio.all;
+
+library uvvm_util;
+context uvvm_util.uvvm_util_context;
+
+-- We assume the master BFM package is available so we can reuse its types and functions.
+use work.axilite_bfm_pkg.all;
+
+package axilite_slave_tb_pkg is
+  
+  --===============================================================================================
+  -- Types and constants for AXILITE BFMs
+  --===============================================================================================
+  constant scope                    : string := "AXILITE_SLAVE_BFM_TEST_BENCH";
+  --constant msg_id_panel             : t_msg_id_panel       := shared_msg_id_panel;
+  --constant config                   : t_axilite_slave_bfm_config := C_AXILITE_SLAVE_BFM_CONFIG_DEFAULT;
+
+  constant ADDR_WIDTH               : natural := 32;
+  constant DATA_WIDTH               : natural := 32;
+
+  constant TEST_ADDR_VALUE          : unsigned (ADDR_WIDTH - 1 downto 0) := X"00000100";
+  constant TEST_DATA_VALUE          : std_logic_vector (DATA_WIDTH - 1 downto 0) := X"CAFEBABE";
+
+
+
+end package axilite_slave_tb_pkg;
+
+package body axilite_slave_tb_pkg is
+end package body axilite_slave_tb_pkg;
+  
